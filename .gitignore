@@ -6,6 +6,7 @@ __pycache__/
 .vscode/
 data/*.json
 data/*.csv
+data/*.jsonl
 models/*.task
 *.log
 .DS_Store

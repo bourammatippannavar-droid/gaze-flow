@@ -11,7 +11,9 @@ PINKY_MCP, PINKY_PIP, PINKY_TIP = 17, 18, 20
 FINGER_TIPS_PIPS_MCPS = [(INDEX_TIP, INDEX_PIP, INDEX_MCP), (MIDDLE_TIP, MIDDLE_PIP, MIDDLE_MCP), (RING_TIP, RING_PIP, RING_MCP), (PINKY_TIP, PINKY_PIP, PINKY_MCP)]
 
 def _dist(a, b):
-    return math.hypot(a.x - b.x, a.y - b.y)
+    ax, ay = (a.x, a.y) if hasattr(a, "x") else (a[0], a[1])
+    bx, by = (b.x, b.y) if hasattr(b, "x") else (b[0], b[1])
+    return math.hypot(ax - bx, ay - by)
 
 class HandGestureDetector:
     def __init__(self, pinch_threshold=0.055, curl_ratio=0.85, cooldown_seconds=0.25):

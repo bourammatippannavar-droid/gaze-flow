@@ -1,4 +1,5 @@
 import tkinter as tk
+import threading
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 import cv2
@@ -11,17 +12,20 @@ from gazeflow.tracking.hand_gesture_detector import HandGestureDetector
 from gazeflow.input.controller import ActionController
 from .calibration import CalibrationWindow
 from .keyboard import VirtualKeyboard
+from .particle_visualizer import HandState, ParticleVisualizer
+from .gesture_trainer import GestureTrainer
 
 class Dashboard:
     def __init__(self, root):
         self.root = root; self.root.title("GazeFlow | Hands-Free Control"); self.root.geometry("1120x760"); self.root.configure(bg="#10151b")
-        self.settings = ProfileStore().load(); self.store = ProfileStore(); self.analytics = Analytics(); self.calibration = Calibration(); self.tracker = HandTracker(self.settings.camera_index); self.gesture_detector = HandGestureDetector(); self.controller = ActionController(self.settings, self.calibration); self.current_sample = None; self.last_event = "ready"
+        self.settings = ProfileStore().load(); self.store = ProfileStore(); self.analytics = Analytics(); self.calibration = Calibration(); self.tracker = HandTracker(self.settings.camera_index); self.gesture_detector = HandGestureDetector(); self.controller = ActionController(self.settings, self.calibration); self.hand_state = HandState(); self.visualizer = ParticleVisualizer(self.hand_state); self.current_sample = None; self.last_event = "ready"
         self._build(); self.root.bind("<space>", lambda _: self.toggle_pause()); self.root.bind("<Escape>", lambda _: self.stop()); self.update()
     def _build(self):
         style = ttk.Style(); style.theme_use("clam"); style.configure("TNotebook", background="#10151b", borderwidth=0); style.configure("TNotebook.Tab", background="#243542", foreground="#e9f1f4", padding=10); style.configure("TLabel", background="#10151b", foreground="#e9f1f4")
         header = tk.Frame(self.root, bg="#10151b"); header.pack(fill="x", padx=24, pady=18)
         tk.Label(header, text="GazeFlow", font=("Segoe UI", 24, "bold"), fg="#48d597", bg="#10151b").pack(side="left"); tk.Label(header, text="  HANDS-FREE COMPUTER CONTROL", font=("Segoe UI", 10), fg="#9aabb4", bg="#10151b").pack(side="left", pady=10)
         self.pause_button = tk.Button(header, text="RESUME", command=self.toggle_pause, bg="#48d597", fg="#10151b", relief="flat", padx=18, pady=8); self.pause_button.pack(side="right")
+        tk.Button(header, text="PRACTICE GESTURES", command=self.open_trainer, bg="#2d829b", fg="white", relief="flat", padx=14, pady=8).pack(side="right", padx=8)
         tk.Button(header, text="EMERGENCY STOP", command=self.stop, bg="#ed6a5a", fg="white", relief="flat", padx=14, pady=8).pack(side="right", padx=8)
         main = tk.Frame(self.root, bg="#10151b"); main.pack(fill="both", expand=True, padx=24)
         self.video = tk.Label(main, bg="#17212b", width=760, height=430); self.video.pack(side="left", fill="both", expand=True)
@@ -63,7 +67,7 @@ class Dashboard:
     def update(self):
         result = self.tracker.read()
         if result:
-            frame, sample = result; self.current_sample = sample; self._show_frame(frame); self.readouts["Cursor source"].config(text="INDEX FINGER" if sample.present else "NO HAND"); self.readouts["Confidence"].config(text=f"{sample.confidence:.0%}"); self.readouts["FPS"].config(text=f"{sample.fps:.0f}"); self.readouts["Calibration"].config(text="READY" if self.calibration.ready else "NEEDED")
+            frame, sample = result; self.current_sample = sample; self.hand_state.set_hands(sample.hands if sample.present and sample.hands else ([sample.landmarks] if sample.present and sample.landmarks else [])); self._show_frame(frame); self.readouts["Cursor source"].config(text="INDEX FINGER" if sample.present else "NO HAND"); self.readouts["Confidence"].config(text=f"{sample.confidence:.0%}"); self.readouts["FPS"].config(text=f"{sample.fps:.0f}"); self.readouts["Calibration"].config(text="READY" if self.calibration.ready else "NEEDED")
             events = self.gesture_detector.update(sample)
             if sample.present:
                 self.controller.move(sample.index_x, sample.index_y)
@@ -81,4 +85,8 @@ class Dashboard:
         self.controller.toggle_pause(); paused = self.controller.paused; self.status.config(text="PAUSED" if paused else "ACTIVE", fg="#ed6a5a" if paused else "#48d597"); self.pause_button.config(text="RESUME" if paused else "PAUSE")
     def stop(self): self.controller.emergency_stop(); self.status.config(text="EMERGENCY STOP", fg="#ed6a5a"); self.pause_button.config(text="RESUME")
     def calibrate(self): CalibrationWindow(self.root, self.calibration, lambda: self.current_sample)
-    def close(self): self.store.save(self.settings); self.tracker.close(); self.root.destroy()
+    def open_trainer(self):
+        self.visualizer.stop()
+        trainer = GestureTrainer(self.hand_state, on_complete=lambda results: self.analytics.record("training_complete", results))
+        threading.Thread(target=trainer.run, daemon=True).start()
+    def close(self): self.visualizer.stop(); self.store.save(self.settings); self.tracker.close(); self.root.destroy()

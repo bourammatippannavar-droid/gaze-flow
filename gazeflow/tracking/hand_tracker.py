@@ -20,6 +20,7 @@ class HandSample:
     landmarks: list = field(default_factory=list)
     confidence: float = 0.0
     fps: float = 0.0
+    hands: list = field(default_factory=list)
 
 class HandTracker:
     def __init__(self, camera_index=0, model_path: Optional[Path] = None):
@@ -32,7 +33,7 @@ class HandTracker:
             urllib.request.urlretrieve(MODEL_URL, model_path)
         options = mp.tasks.vision.HandLandmarkerOptions(
             base_options=mp.tasks.BaseOptions(model_asset_path=str(model_path)),
-            num_hands=1,
+            num_hands=2,
             min_hand_detection_confidence=0.6,
             min_hand_presence_confidence=0.6,
             min_tracking_confidence=0.6,
@@ -55,12 +56,13 @@ class HandTracker:
         self.last_time = now
         if not result.hand_landmarks:
             return frame, HandSample(fps=self.fps)
+        all_landmarks = [[(point.x, point.y, point.z) for point in hand] for hand in result.hand_landmarks]
         landmarks = result.hand_landmarks[0]
         index = landmarks[8]
         confidence = result.handedness[0][0].score if result.handedness else 0.0
         for point in landmarks:
             cv2.circle(frame, (int(point.x * width), int(point.y * height)), 3, (239, 201, 105), -1)
-        return frame, HandSample(True, index.x, index.y, landmarks, confidence, self.fps)
+        return frame, HandSample(True, index.x, index.y, all_landmarks[0], confidence, self.fps, all_landmarks)
 
     def close(self):
         self.capture.release()
